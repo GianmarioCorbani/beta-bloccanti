@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compendio Clinico: Beta-Bloccanti</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chosen Palette: Medical Clean. Slate (Neutrals), Teal (Primary Action), Red/Rose (Warnings), Emerald (Indications). 
+         Background is Slate-50 for reduced eye strain. -->
+    
+    <!-- Application Structure Plan:
+         1. Header: Professional context, clear title.
+         2. Clinical Dashboard (Top): 
+            - Interactive Filter Cards: Quick filtering by primary indication (HF, HTN, Arrhythmia) and Selectivity.
+            - Pharmacokinetic Visualizer: A dual-view chart (Half-life comparison & Selectivity Ratio) to allow visual comparison of duration of action.
+         3. The Comparative Matrix (Main): 
+            - A detailed, sortable HTML table presenting the Beta-blocker database.
+            - Columns: Molecule, Class/Selectivity, Key Indications, Specific Profile/Side Effects, Pharmacokinetics (Lipophilia/Excretion).
+            - Row Expansion: Clicking a row reveals a "Clinical Pearl" or detailed mechanism snippet.
+         4. Export Control: A sticky or prominent button to generate a CSV download of the current filtered view.
+         5. Methodology/Footer: Brief disclaimer and source context.
+         
+         User Flow: The physician enters, selects "Scompenso Cardiaco" (Heart Failure) to see approved agents (Bisoprolol, Carvedilol, etc.), checks the chart for half-life to decide dosing frequency, reviews side effects in the table, and exports the list if needed.
+    -->
+
+    <!-- Visualization & Content Choices:
+         1. Goal: Compare Duration of Action -> Viz: Horizontal Bar Chart (Chart.js) -> Interaction: Hover for exact hours. -> Justification: Half-life is a critical factor for compliance (QD vs BID dosing).
+         2. Goal: Filter by Indication -> Viz: Interactive Cards/Buttons -> Interaction: Click updates Table and Charts. -> Justification: Doctors prescribe based on diagnosis first.
+         3. Goal: Detailed Drug Info -> Viz: HTML Table with Tailwind styling -> Interaction: Sort columns, Export to CSV. -> Justification: Tabular data is the standard for comparison.
+         4. Goal: Safety Profile -> Viz: Color-coded tags in table -> Interaction: Visual scanning. -> Justification: Quick identification of adverse effects (e.g., "Incubi" for lipophilic drugs).
+    -->
+
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 100%; 
+            height: 300px;
+            margin: 0 auto;
+        }
+        /* Custom scrollbar for the table container */
+        .table-scroll::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        .table-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        .table-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .table-scroll::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        .hidden-row {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 bg-teal-600 rounded-md flex items-center justify-center text-white font-bold text-xl">
+                        &#946;
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Compendio Clinico: Beta-Bloccanti (a cura di Dott. Gianmario Corbani)</h1>
+                        <p class="text-xs text-slate-500 font-medium">Strumento di Supporto Decisionale & Export Dati</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="resetApp()" class="text-sm text-slate-600 hover:text-teal-600 font-medium transition-colors">
+                        Reset Filtri
+                    </button>
+                    <button onclick="exportTableToCSV('beta_bloccanti.csv')" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm transition-all flex items-center gap-2">
+                        <span>Scarica Excel/CSV</span>
+                        <span>&#11015;</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Intro Section -->
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold text-slate-900 mb-2">Analisi Comparativa Farmacologica</h2>
+            <p class="text-slate-600 max-w-3xl leading-relaxed">
+                Questa dashboard interattiva permette di confrontare le proprietà farmacocinetiche e farmacodinamiche dei principali beta-bloccanti. 
+                Utilizza i filtri sottostanti per selezionare le molecole in base all'indicazione clinica (es. <strong>Scompenso Cardiaco</strong>) o alla selettività recettoriale.
+                La tabella evidenzia indicazioni, effetti collaterali specifici e note cliniche per ogni principio attivo, inclusi <em>Bisoprolol, Carvedilolo e Nebivololo</em>.
+            </p>
+        </div>
+
+        <!-- Dashboard Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+            
+            <!-- Controls & Filters (Left Col) -->
+            <div class="lg:col-span-3 space-y-6">
+                
+                <!-- Clinical Indication Filter -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
+                        Filtra per Indicazione
+                    </h3>
+                    <div class="space-y-2" id="indication-filters">
+                        <!-- Filters injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Receptor Selectivity Filter -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
+                        Selettività Recettoriale
+                    </h3>
+                    <div class="space-y-2" id="selectivity-filters">
+                        <!-- Filters injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Stats Summary -->
+                <div class="bg-slate-800 p-5 rounded-xl shadow-md text-white">
+                    <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Molecole Visibili</h3>
+                    <p class="text-3xl font-bold text-teal-400" id="count-display">0</p>
+                    <p class="text-xs text-slate-400 mt-2">Dati aggiornati per uso clinico.</p>
+                </div>
+
+            </div>
+
+            <!-- Visualization Area (Right Col) -->
+            <div class="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <!-- Chart 1: Half Life -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="mb-2">
+                        <h3 class="text-lg font-bold text-slate-800">Confronto Emivita (t ½)</h3>
+                        <p class="text-xs text-slate-500">Durata d'azione media in ore (impatto su posologia).</p>
+                    </div>
+                    <div class="flex-grow flex items-center justify-center bg-slate-50 rounded-lg p-2">
+                        <div class="chart-container">
+                            <canvas id="halfLifeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart 2: Lipophilicity vs Elimination -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="mb-2">
+                        <h3 class="text-lg font-bold text-slate-800">Profilo di Solubilità</h3>
+                        <p class="text-xs text-slate-500">Impatto su effetti CNS e via di eliminazione.</p>
+                    </div>
+                    <div class="flex-grow flex items-center justify-center bg-slate-50 rounded-lg p-2">
+                        <div class="chart-container">
+                            <canvas id="solubilityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- The Data Table -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-6 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900">Matrice Dettagliata Farmaci</h3>
+                    <p class="text-sm text-slate-500">Clicca sulle intestazioni per ordinare. Passa il mouse sulle celle per dettagli.</p>
+                </div>
+                <div class="relative">
+                    <input type="text" id="searchInput" placeholder="Cerca molecola o effetto..." 
+                           class="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 w-64">
+                    <span class="absolute left-3 top-2.5 text-slate-400">&#128269;</span>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto table-scroll">
+                <table class="min-w-full divide-y divide-slate-200" id="mainTable">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100" onclick="sortTable('name')">Molecola &#8645;</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100" onclick="sortTable('selectivity')">Selettività &#8645;</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Indicazioni Principali</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Effetti Collaterali (Classe/Specifici)</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100" onclick="sortTable('halfLife')">Emivita (h) &#8645;</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Note Cliniche</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-slate-200 text-sm" id="tableBody">
+                        <!-- Rows generated by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between">
+                <span>Mostrando <span id="showing-count">0</span> di <span id="total-count">0</span> farmaci</span>
+                <span>*Dati a scopo informativo professionale.</span>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-8 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <p class="text-slate-400 text-sm">Generato per uso medico • Fonti: Farmacopea Ufficiale & Linee Guida ESC/AHA</p>
+            <p class="text-slate-400 text-sm">Curatore Dott. Gianmario Corbani</p>
+        </div>
+    </footer>
+
+    <!-- LOGIC & DATA -->
+    <script>
+        // --- 1. DATA SOURCE ---
+        const betaBlockers = [
+            {
+                id: 1,
+                name: "Bisoprololo",
+                selectivity: "Beta-1 Selettivo",
+                selectivityType: "b1",
+                indications: ["Scompenso Cardiaco", "Ipertensione", "Angina Pectoris"],
+                classSideEffects: ["Bradicardia", "Ipotensione", "Astenia"],
+                specificSideEffects: "Minori effetti CNS (idrofilo). Ben tollerato nello scompenso.",
+                halfLife: 10,
+                solubility: "Bilanciata (50/50)",
+                notes: "Cardioselettivo. Dose-dipendente. Prima scelta nello scompenso (CIBIS II)."
+            },
+            {
+                id: 2,
+                name: "Carvedilolo",
+                selectivity: "Non Selettivo + Alfa-1 Blocco",
+                selectivityType: "non-selective-alpha",
+                indications: ["Scompenso Cardiaco", "Ipertensione", "Disfunzione VS post-IMA"],
+                classSideEffects: ["Bradicardia", "Broncospasmo (lieve)", "Vertigini"],
+                specificSideEffects: "Ipotensione ortostatica (blocco Alfa-1), aumento peso. Effetto antiossidante.",
+                halfLife: 7,
+                solubility: "Lipofilo",
+                notes: "Vasodilatatore. Riduce mortalità nello scompenso severo. Assumere col cibo."
+            },
+            {
+                id: 3,
+                name: "Nebivololo",
+                selectivity: "Beta-1 Selettivo + NO Donatore",
+                selectivityType: "b1",
+                indications: ["Ipertensione", "Scompenso Cardiaco (Anziani)"],
+                classSideEffects: ["Bradicardia", "Cefalea", "Parestesie"],
+                specificSideEffects: "Minor rischio di disfunzione erettile. Profilo metabolico neutro.",
+                halfLife: 10, // Average extensive metabolizers usually higher, simplified for comparison
+                solubility: "Lipofilo",
+                notes: "Vasodilatazione mediata da Ossido Nitrico (NO). Ottimo profilo tollerabilità."
+            },
+            {
+                id: 4,
+                name: "Metoprololo (Succinato)",
+                selectivity: "Beta-1 Selettivo",
+                selectivityType: "b1",
+                indications: ["Scompenso Cardiaco", "Angina", "Post-IMA", "Aritmie"],
+                classSideEffects: ["Bradicardia", "Affaticamento"],
+                specificSideEffects: "Possibili disturbi del sonno (moderatamente lipofilo).",
+                halfLife: 4, // Succinate formulation extends effect, but pharmacologic half life is short
+                solubility: "Moderatamente Lipofilo",
+                notes: "Il Succinato è a rilascio prolungato (mono-somministrazione), il Tartrato no."
+            },
+            {
+                id: 5,
+                name: "Atenololo",
+                selectivity: "Beta-1 Selettivo",
+                selectivityType: "b1",
+                indications: ["Ipertensione", "Angina", "Aritmie"],
+                classSideEffects: ["Estremità fredde", "Bradicardia"],
+                specificSideEffects: "Escrezione renale (aggiustare dose in IRC). Minori effetti CNS (idrofilo).",
+                halfLife: 7,
+                solubility: "Idrofilo",
+                notes: "Non indicato come prima linea per riduzione mortalità CV rispetto ad altri nuovi."
+            },
+            {
+                id: 6,
+                name: "Propranololo",
+                selectivity: "Non Selettivo (B1 + B2)",
+                selectivityType: "non-selective",
+                indications: ["Emicrania (Profilassi)", "Tremore essenziale", "Tireotossicosi", "Ipertensione portale"],
+                classSideEffects: ["Broncospasmo", "Bradicardia", "Mascheramento ipoglicemia"],
+                specificSideEffects: "Incubi vividi, depressione (alta penetrazione CNS).",
+                halfLife: 4,
+                solubility: "Altamente Lipofilo",
+                notes: "Capostipite. Usi extra-cardiaci (ansia, tremore, varici esofagee)."
+            },
+            {
+                id: 7,
+                name: "Sotalolo",
+                selectivity: "Non Selettivo + Classe III",
+                selectivityType: "non-selective",
+                indications: ["Aritmie Ventricolari", "Fibrillazione Atriale"],
+                classSideEffects: ["Bradicardia", "Dispnea"],
+                specificSideEffects: "Allungamento QT (Rischio Torsione di Punta). Proaritmico.",
+                halfLife: 12,
+                solubility: "Idrofilo",
+                notes: "Richiede monitoraggio ECG (QTc). Attività antiaritmica Classe III (canali K+)."
+            },
+            {
+                id: 8,
+                name: "Labetalolo",
+                selectivity: "Non Selettivo + Alfa-1 Blocco",
+                selectivityType: "non-selective-alpha",
+                indications: ["Emergenze Ipertensive", "Ipertensione in Gravidanza"],
+                classSideEffects: ["Ipotensione ortostatica", "Vertigini"],
+                specificSideEffects: "Epatotossicità (rara). Formicolio cuoio capelluto.",
+                halfLife: 6,
+                solubility: "Lipofilo",
+                notes: "Sicuro in gravidanza. Potente effetto anti-ipertensivo rapido."
+            }
+        ];
+
+        // State Management
+        let currentFilters = {
+            indications: [],
+            selectivity: []
+        };
+        let searchQuery = "";
+        let sortConfig = { key: null, direction: 'asc' };
+
+        // --- 2. INITIALIZATION & RENDERING ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initFilters();
+            updateUI();
+        });
+
+        function initFilters() {
+            // Unique Indications
+            const allIndications = new Set();
+            betaBlockers.forEach(d => d.indications.forEach(i => allIndications.add(i)));
+            
+            const indContainer = document.getElementById('indication-filters');
+            Array.from(allIndications).sort().forEach(ind => {
+                const div = document.createElement('div');
+                div.className = "flex items-center";
+                div.innerHTML = `
+                    <input type="checkbox" id="ind-${ind}" value="${ind}" class="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500 filter-checkbox-ind">
+                    <label for="ind-${ind}" class="ml-2 text-sm text-slate-700 cursor-pointer hover:text-teal-700">${ind}</label>
+                `;
+                indContainer.appendChild(div);
+            });
+
+            // Selectivity Types (Hardcoded for order)
+            const selTypes = [
+                { val: "b1", label: "Beta-1 Selettivo" },
+                { val: "non-selective", label: "Non Selettivo" },
+                { val: "non-selective-alpha", label: "Non Selettivo + Alfa Blocco" }
+            ];
+            const selContainer = document.getElementById('selectivity-filters');
+            selTypes.forEach(sel => {
+                const div = document.createElement('div');
+                div.className = "flex items-center";
+                div.innerHTML = `
+                    <input type="checkbox" id="sel-${sel.val}" value="${sel.val}" class="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500 filter-checkbox-sel">
+                    <label for="sel-${sel.val}" class="ml-2 text-sm text-slate-700 cursor-pointer hover:text-teal-700">${sel.label}</label>
+                `;
+                selContainer.appendChild(div);
+            });
+
+            // Event Listeners
+            document.querySelectorAll('.filter-checkbox-ind').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    if(cb.checked) currentFilters.indications.push(cb.value);
+                    else currentFilters.indications = currentFilters.indications.filter(i => i !== cb.value);
+                    updateUI();
+                });
+            });
+
+            document.querySelectorAll('.filter-checkbox-sel').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    if(cb.checked) currentFilters.selectivity.push(cb.value);
+                    else currentFilters.selectivity = currentFilters.selectivity.filter(s => s !== cb.value);
+                    updateUI();
+                });
+            });
+
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                searchQuery = e.target.value.toLowerCase();
+                updateUI();
+            });
+        }
+
+        // --- 3. FILTERING & LOGIC ---
+
+        function getFilteredData() {
+            return betaBlockers.filter(drug => {
+                // Indication Filter (OR logic within indications)
+                const indMatch = currentFilters.indications.length === 0 || 
+                                 drug.indications.some(i => currentFilters.indications.includes(i));
+                
+                // Selectivity Filter (OR logic)
+                const selMatch = currentFilters.selectivity.length === 0 || 
+                                 currentFilters.selectivity.includes(drug.selectivityType);
+
+                // Search Filter
+                const searchMatch = !searchQuery || 
+                                    drug.name.toLowerCase().includes(searchQuery) || 
+                                    drug.notes.toLowerCase().includes(searchQuery) ||
+                                    drug.specificSideEffects.toLowerCase().includes(searchQuery);
+
+                return indMatch && selMatch && searchMatch;
+            });
+        }
+
+        function sortData(data) {
+            if (!sortConfig.key) return data;
+            
+            return [...data].sort((a, b) => {
+                let valA = a[sortConfig.key];
+                let valB = b[sortConfig.key];
+
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function sortTable(key) {
+            if (sortConfig.key === key) {
+                sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortConfig.key = key;
+                sortConfig.direction = 'asc';
+            }
+            updateUI();
+        }
+
+        // --- 4. UI UPDATE & RENDERING ---
+
+        function updateUI() {
+            let data = getFilteredData();
+            data = sortData(data);
+
+            renderTable(data);
+            updateCharts(data);
+            updateStats(data);
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            data.forEach(drug => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition-colors group";
+                
+                // Format indications tags
+                const indTags = drug.indications.map(i => 
+                    `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 mr-1 mb-1">${i}</span>`
+                ).join('');
+
+                // Side effects formatting
+                const classSE = drug.classSideEffects.join(", ");
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-bold text-slate-900">${drug.name}</div>
+                        <div class="text-xs text-slate-500">${drug.solubility}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                        ${drug.selectivity}
+                    </td>
+                    <td class="px-6 py-4 text-sm text-slate-600">
+                        <div class="flex flex-wrap">${indTags}</div>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-slate-600 max-w-xs">
+                        <div class="mb-1"><span class="font-semibold text-xs text-slate-400 uppercase">Classe:</span> ${classSE}</div>
+                        <div class="text-rose-700"><span class="font-semibold text-xs text-rose-300 uppercase">Spec:</span> ${drug.specificSideEffects}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 text-center">
+                        <span class="bg-slate-100 text-slate-800 px-2 py-1 rounded font-mono font-bold">${drug.halfLife}h</span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-slate-500 italic max-w-xs">
+                        "${drug.notes}"
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            document.getElementById('showing-count').innerText = data.length;
+            document.getElementById('total-count').innerText = betaBlockers.length;
+        }
+
+        function updateStats(data) {
+            document.getElementById('count-display').innerText = data.length;
+        }
+
+        function resetApp() {
+            currentFilters = { indications: [], selectivity: [] };
+            searchQuery = "";
+            document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            document.getElementById('searchInput').value = "";
+            updateUI();
+        }
+
+        // --- 5. CHARTS (CHART.JS) ---
+        
+        let halfLifeChartInstance = null;
+        let solubilityChartInstance = null;
+
+        function updateCharts(data) {
+            updateHalfLifeChart(data);
+            updateSolubilityChart(data);
+        }
+
+        function updateHalfLifeChart(data) {
+            const ctx = document.getElementById('halfLifeChart').getContext('2d');
+            const labels = data.map(d => d.name);
+            const values = data.map(d => d.halfLife);
+            const colors = data.map(d => d.halfLife < 5 ? '#cbd5e1' : (d.halfLife > 10 ? '#0d9488' : '#2dd4bf'));
+
+            if (halfLifeChartInstance) halfLifeChartInstance.destroy();
+
+            halfLifeChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Emivita (Ore)',
+                        data: values,
+                        backgroundColor: colors,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Emivita: ${context.raw} ore`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, grid: { display: false } },
+                        y: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function updateSolubilityChart(data) {
+            const ctx = document.getElementById('solubilityChart').getContext('2d');
+            
+            // Count solubility types
+            const counts = {};
+            data.forEach(d => {
+                counts[d.solubility] = (counts[d.solubility] || 0) + 1;
+            });
+
+            if (solubilityChartInstance) solubilityChartInstance.destroy();
+
+            solubilityChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(counts),
+                    datasets: [{
+                        data: Object.values(counts),
+                        backgroundColor: ['#0f766e', '#2dd4bf', '#99f6e4', '#ccfbf1'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } }
+                    },
+                    layout: { padding: 10 }
+                }
+            });
+        }
+
+        // --- 6. EXPORT FUNCTIONALITY ---
+
+        function exportTableToCSV(filename) {
+            const data = getFilteredData(); // Export current view
+            const csvRows = [];
+            
+            // Header
+            const headers = ["Molecola", "Selettività", "Indicazioni", "Effetti Collaterali Classe", "Effetti Collaterali Specifici", "Emivita (h)", "Solubilità", "Note"];
+            csvRows.push(headers.join(","));
+
+            // Rows
+            for (const row of data) {
+                // Escape quotes for CSV
+                const escape = (text) => `"${String(text).replace(/"/g, '""')}"`;
+                
+                const values = [
+                    escape(row.name),
+                    escape(row.selectivity),
+                    escape(row.indications.join("; ")),
+                    escape(row.classSideEffects.join("; ")),
+                    escape(row.specificSideEffects),
+                    escape(row.halfLife),
+                    escape(row.solubility),
+                    escape(row.notes)
+                ];
+                csvRows.push(values.join(","));
+            }
+
+            const csvString = csvRows.join("\n");
+            const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+            const link = document.createElement("a");
+            
+            // Create download link
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+    </script>
+</body>
+</html>
